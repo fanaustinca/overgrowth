@@ -43,13 +43,23 @@ void main(){
   // Risk lanes get a nervous flicker so they read as dangerous at a glance.
   float flicker = mix(1.0, 0.72 + 0.28 * sin(uTime * 9.0 + vUv.y * 4.0), uRisk);
 
+  // Chevrons painted on the lane the vine will actually take. A marker mesh
+  // reads badly from a chase camera - anything pointing down the lane is seen
+  // end-on - but arrows painted on the surface stay legible at every angle, the
+  // way road markings do.
+  float pick = smoothstep(0.55, 1.0, uSelected);
+  float band = fract(vUv.y * 2.2 - uTime * 0.5 - edge * 0.85);
+  float chevron = smoothstep(0.17, 0.03, abs(band - 0.5)) * smoothstep(1.05, 0.72, edge);
+
   vec3 col = uColor * (body * 0.6 + rails * 1.35) + uHot * (spine * (0.22 + 0.36 * flow));
   col *= flicker;
   col *= mix(1.0, 1.75, uSelected);
+  col += uHot * chevron * pick * 2.1;
 
   float depthFade = 1.0 / (1.0 + uAhead * 0.5);
   float a = (body * 0.5 + rails * 0.85 + spine * 0.55) * uAlpha * depthFade * vFade;
   a *= mix(0.7, 1.0, uSelected);
+  a = max(a, chevron * pick * 0.9 * depthFade * vFade);
   // The stretch of lane the vine has already grown over is dead information and
   // sits right under the camera, where it would otherwise be the brightest
   // thing on screen. uPassed is -1 on every branch but the current one, which
@@ -297,6 +307,7 @@ export class TrackView {
     this.gemGeo = new THREE.OctahedronGeometry(1.05, 0);
     this.spikeGeo = new THREE.ConeGeometry(0.45, 2.0, 5);
 
+
     this.ghostMarker = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 10), this._glowMat(ORB_FRAG, 0x9fd8ff, 0xffffff));
     this.ghostMarker.material.transparent = true;
     this.ghostMarker.material.opacity = 0.5;
@@ -369,16 +380,24 @@ export class TrackView {
       entry.ribbon.material.uniforms.uAhead.value = Math.max(0, ahead);
       // ahead === -1 is the branch under the vine right now: it has already been
       // decided, so it steps back and lets the open fork carry the eye.
+      // The lane under the vine reads as "you are here": bright and lit like a
+      // selected lane, but cut off behind the head so only the stretch still to
+      // be travelled shows. The sibling the player is *not* taking drops well
+      // back, so the open choice is a contrast, not a guess.
+      const current = ahead < 0;
+      const rejected = ahead === 0 && branch.id !== selectedId;
       entry.ribbon.material.uniforms.uAlpha.value =
-        ahead < 0 ? 0.4 : (branch.tier === 'risk' ? 0.85 : 1.0);
-      entry.ribbon.material.uniforms.uPassed.value = ahead < 0 ? passed : -1;
+        current ? 0.45 : rejected ? 0.34 : (branch.tier === 'risk' ? 0.85 : 1.0);
+      entry.ribbon.material.uniforms.uPassed.value = current ? passed : -1;
       entry.ribbonTargetSel = branch.id === selectedId ? 1
-        : (projected && projected.has(branch.id) ? 0.45 : 0);
+        : current ? 0.3
+        : (projected && projected.has(branch.id) ? 0.4 : 0);
       if (entry.shadow) entry.shadow.material.uniforms.uAlpha.value = 0.85 / (1 + Math.max(0, ahead));
     }
     for (const [id, entry] of this.entries) {
       if (!keep.has(id)) { this._destroy(entry); this.entries.delete(id); }
     }
+
   }
 
   setGhost(branches) {

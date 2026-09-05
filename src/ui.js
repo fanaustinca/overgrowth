@@ -13,6 +13,7 @@ export class UI {
       loading: $('loading'), loadBar: $('loadBar').firstElementChild, loadPct: $('loadPct'),
       hud: $('hud'), length: $('length'), hudBest: $('hudBest'), hudStage: $('hudStage'),
       hudModeLabel: $('hudModeLabel'), mult: $('mult'), ghostDelta: $('ghostDelta'), tapHint: $('tapHint'),
+      picker: $('picker'), pickLeft: $('pickLeft'), pickRight: $('pickRight'),
       menu: $('menu'), menuBest: $('menuBest'), menuToday: $('menuToday'), menuLifetime: $('menuLifetime'),
       menuSeed: $('menuSeed'), modeDaily: $('modeDaily'), modeEndless: $('modeEndless'),
       results: $('results'), resultScore: $('resultScore'), resultBest: $('resultBest'), resultSeed: $('resultSeed'),
@@ -84,6 +85,13 @@ export class UI {
   hideHud() { this.el.hud.classList.remove('on'); }
 
   setLength(v) { this.el.length.textContent = Math.max(0, Math.round(v)); }
+
+  // Mirrors the lane highlight in the scene, so the pending choice is readable
+  // without hunting for which ribbon got brighter.
+  setSelection(isLeft) {
+    this.el.pickLeft.classList.toggle('on', !!isLeft);
+    this.el.pickRight.classList.toggle('on', !isLeft);
+  }
   setStage(stage) { this.el.hudStage.textContent = 'STAGE ' + (stage + 1); }
   hideTapHint() { this.el.tapHint.style.display = 'none'; }
 

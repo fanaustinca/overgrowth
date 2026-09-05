@@ -1,7 +1,7 @@
 // Boot, game loop, and the wiring between sim, renderer, SDK, and UI.
 
 import * as THREE from '../vendor/three.module.min.js';
-import { Game, simulateRoute } from './game.js';
+import { Game, simulateRoute, LEFT, RIGHT } from './game.js';
 import { dailySeed, todaySeedString, randomSeed, hashString } from './rng.js';
 import { Progression } from './progression.js';
 import { GhostPlayback } from './ghost.js';
@@ -120,12 +120,21 @@ class Overgrowth {
       this.game.tap();
     };
     window.addEventListener('pointerdown', tap, { passive: true });
+
+    // Desktop gets an absolute left/right as well as the one-button flip:
+    // A / D and the arrow keys pick a side, space and enter toggle.
+    const SIDE = { ArrowLeft: LEFT, KeyA: LEFT, ArrowRight: RIGHT, KeyD: RIGHT };
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
-        e.preventDefault();
-        if (this.state === 'run') this.game.tap();
-        else if (this.state === 'menu') this.startRun(this.mode);
-        else if (this.state === 'results') this.startRun(this.mode);
+      const side = SIDE[e.code];
+      const toggle = e.code === 'Space' || e.code === 'Enter';
+      if (side === undefined && !toggle) return;
+      e.preventDefault();
+      if (this.state === 'run') {
+        this.sound.resume();
+        if (side !== undefined) this.game.select(side);
+        else if (!e.repeat) this.game.tap();
+      } else if (!e.repeat && (this.state === 'menu' || this.state === 'results')) {
+        this.startRun(this.mode);
       }
     });
   }
@@ -194,7 +203,12 @@ class Overgrowth {
     this.creditedPeak = 0;
 
     this.game = new Game(this.seed, {
-      onFlip: () => { this.sound.flip(); this.vine.ripple(0.45); },
+      onFlip: (side) => {
+        this.sound.flip();
+        this.vine.ripple(0.45);
+        this.ui.setSelection(side === LEFT);
+        this.syncView();
+      },
       onFork: (next, finished) => this.onFork(next, finished),
       onPickup: (p, pos) => this.onPickup(p, pos),
       onHazard: (loss, pos) => this.onHazard(loss, pos),
@@ -213,6 +227,7 @@ class Overgrowth {
     this.ui.hide('menu');
     this.ui.hide('results');
     this.ui.showHud(this.mode);
+    this.ui.setSelection(this.game.selection === LEFT);
     this.ui.setLength(this.game.length);
     this.ui.setStage(0);
     this.ui.setGhostDelta(null);
@@ -388,8 +403,10 @@ class Overgrowth {
     el.textContent = text;
     el.style.cssText = `position:fixed;left:${(p.x * 0.5 + 0.5) * window.innerWidth}px;top:${(-p.y * 0.5 + 0.5) * window.innerHeight}px;
       transform:translate(-50%,-50%);color:${color};font-weight:800;font-size:clamp(20px,5vw,30px);pointer-events:none;
-      text-shadow:0 2px 14px rgba(0,0,0,.8);transition:transform .85s cubic-bezier(.2,.8,.3,1),opacity .85s ease;z-index:3`;
-    document.body.appendChild(el);
+      text-shadow:0 2px 14px rgba(0,0,0,.8);transition:transform .85s cubic-bezier(.2,.8,.3,1),opacity .85s ease`;
+    // Inside the HUD, not the body: a floater parented to the body outlives the
+    // run and draws over the results and wardrobe panels.
+    this.ui.el.hud.appendChild(el);
     requestAnimationFrame(() => {
       el.style.transform = 'translate(-50%,-140%) scale(1.15)';
       el.style.opacity = '0';

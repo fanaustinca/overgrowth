@@ -43,26 +43,40 @@
   .btn[disabled]{opacity:.42;pointer-events:none}
   .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
 
-  /* HUD */
+  /* HUD. The top-centre of the frame is where the upcoming forks converge, so
+     nothing lives there: the read-ahead has to stay unobstructed. */
   #hud{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .3s ease}
   #hud.on{opacity:1}
-  .hud-top{position:absolute;top:max(16px,env(safe-area-inset-top));left:0;right:0;display:flex;justify-content:center;flex-direction:column;align-items:center;gap:2px}
-  #length{font-size:clamp(46px,13vw,84px);font-weight:800;line-height:.95;letter-spacing:-.02em;
-    text-shadow:0 0 34px rgba(120,255,170,.42),0 2px 12px rgba(0,0,0,.6);font-variant-numeric:tabular-nums}
-  #lengthLabel{font-size:11px;letter-spacing:.34em;color:var(--dim);text-transform:uppercase}
+  .hud-bottom{position:absolute;bottom:calc(max(14px,env(safe-area-inset-bottom)) + 10px);left:0;right:0;
+    display:flex;flex-direction:column;align-items:center;gap:1px}
+  #length{font-size:clamp(38px,10vw,66px);font-weight:800;line-height:.95;letter-spacing:-.02em;
+    text-shadow:0 0 34px rgba(120,255,170,.42),0 2px 12px rgba(0,0,0,.75);font-variant-numeric:tabular-nums}
+  #lengthLabel{font-size:10px;letter-spacing:.34em;color:var(--dim);text-transform:uppercase}
   .hud-corner{position:absolute;top:max(16px,env(safe-area-inset-top));display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--dim)}
   .hud-corner.left{left:max(16px,env(safe-area-inset-left))}
   .hud-corner.right{right:max(16px,env(safe-area-inset-right));text-align:right}
   .hud-corner b{color:var(--ink);font-size:15px;font-variant-numeric:tabular-nums}
-  #mult{position:absolute;top:calc(max(16px,env(safe-area-inset-top)) + clamp(58px,15vw,96px));left:50%;transform:translateX(-50%);
+  #mult{position:absolute;top:max(16px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);
     padding:5px 14px;border-radius:999px;background:rgba(255,210,110,.16);border:1px solid rgba(255,210,110,.4);
     color:var(--gold);font-weight:700;font-size:14px;letter-spacing:.08em;opacity:0;transition:opacity .2s ease}
   #mult.on{opacity:1}
-  #ghostDelta{position:absolute;bottom:calc(max(16px,env(safe-area-inset-bottom)) + 8px);left:50%;transform:translateX(-50%);
+
+  /* Which branch the vine will take at the next fork. Mirrors the lane
+     highlight in the scene so the choice is legible even mid-flip. */
+  #picker{position:absolute;bottom:calc(max(14px,env(safe-area-inset-bottom)) + clamp(74px,15vw,104px));
+    left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;
+    font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim)}
+  #picker i{font-style:normal;font-size:19px;line-height:1;padding:3px 12px;border-radius:999px;
+    border:1px solid transparent;color:rgba(255,255,255,.22);transition:color .14s ease,border-color .14s ease,background .14s ease}
+  #picker i.on{color:var(--ink);border-color:rgba(125,255,176,.55);background:rgba(125,255,176,.14);
+    text-shadow:0 0 16px rgba(125,255,176,.7)}
+  #ghostDelta{position:absolute;bottom:calc(max(14px,env(safe-area-inset-bottom)) + clamp(108px,20vw,144px));
+    left:50%;transform:translateX(-50%);
     font-size:13px;color:#9fd8ff;letter-spacing:.08em;opacity:0;transition:opacity .25s ease}
   #ghostDelta.on{opacity:.95}
-  #tapHint{position:absolute;bottom:calc(max(16px,env(safe-area-inset-bottom)) + 44px);left:50%;transform:translateX(-50%);
-    font-size:13px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase;animation:pulse 1.9s ease-in-out infinite}
+  #tapHint{position:absolute;bottom:calc(max(14px,env(safe-area-inset-bottom)) + clamp(136px,25vw,180px));
+    left:50%;transform:translateX(-50%);text-align:center;
+    font-size:12px;letter-spacing:.18em;color:var(--dim);text-transform:uppercase;animation:pulse 1.9s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:.35}50%{opacity:.95}}
 
   /* Panels */
@@ -127,15 +141,16 @@
 <div id="ui">
   <!-- HUD -->
   <div id="hud">
-    <div class="hud-top">
+    <div class="hud-bottom">
       <div id="length">0</div>
       <div id="lengthLabel">length</div>
     </div>
     <div id="mult">×2.0</div>
+    <div id="picker"><i id="pickLeft">◀</i><span>branch</span><i id="pickRight">▶</i></div>
     <div class="hud-corner left"><span>BEST</span><b id="hudBest">0</b></div>
     <div class="hud-corner right"><span id="hudModeLabel">ENDLESS</span><b id="hudStage">STAGE 1</b></div>
     <div id="ghostDelta"></div>
-    <div id="tapHint">tap to flip branch</div>
+    <div id="tapHint">tap to flip · A/D or ← →</div>
   </div>
 
   <!-- Menu -->
@@ -160,7 +175,8 @@
         <button class="btn ghost" id="wardrobeBtn">Skins &amp; Biomes</button>
         <button class="btn ghost" id="muteBtn">Sound: On</button>
       </div>
-      <p class="note" style="margin:16px auto 0">Tap anywhere to flip which branch the vine takes.
+      <p class="note" style="margin:16px auto 0">Tap anywhere to flip which branch the vine takes —
+        or press <b>A</b> / <b>D</b> (or ← →) to pick a side. Chevrons run up the lane you're taking.
         Wide lanes are safe. Narrow glowing lanes pay more — if they're clean.</p>
     </div>
   </div>

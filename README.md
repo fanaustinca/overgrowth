@@ -2,7 +2,8 @@
 
 A one-tap branching-path growth runner. A vine grows forward on its own along a
 procedurally branching path; a tap anywhere flips which branch it takes at the
-next fork. Safe lanes are wide and lit and pay +1. Risk lanes are narrow, dim,
+next fork. Desktop can also pick a side outright with **A** / **D** or the arrow
+keys, and space or enter flips. Safe lanes are wide and lit and pay +1. Risk lanes are narrow, dim,
 and carry orbs (+3–5) or a multiplier gem — and usually hazards, which snap
 segments off the vine. The run ends when the vine withers to nothing, so a bad
 read costs length, never an instant death.
@@ -125,6 +126,12 @@ screen replays your best run as a ghost and draws the seed's optimal route as a
 dotted overlay. The number it quotes is not a sum of branch values — that
 ignores withering and is unreachable — but the peak length that route actually
 reaches when replayed through the simulation.
+
+**Reading the fork.** Three things say where the vine is going: chevrons run up
+the chosen lane, the lane the player is *not* taking drops well back, and a HUD
+picker mirrors the choice. Left and right always mean the player's left and
+right: the chase camera looks down +z, which mirrors world x, so `LEFT`/`RIGHT`
+in `game.js` are screen sides and every branch resolves through `childOnSide`.
 
 **Progression** is cosmetic only: 5 vine skins and 4 biomes unlocked by
 cumulative lifetime length. Nothing affects difficulty or scoring.

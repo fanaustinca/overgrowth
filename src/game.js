@@ -20,8 +20,21 @@ export const MULT_FORKS = 8;
 // kills a starved vine. Both scale with stage, which is the escalation curve.
 export const DECAY = { flat: 0.45, flatPerStage: 0.16, rate: 0.007, ratePerStage: 0.002 };
 
-export const LEFT = -1;
-export const RIGHT = 1;
+// Screen sides, not world axes. The chase camera looks down +z, which mirrors
+// world x: the branch with the *greater* x is the one drawn on the player's
+// left. Each constant is the `side` value of the branch that appears on that
+// side of the screen, so input, the HUD picker and the lane highlight all agree
+// with what the player sees.
+export const LEFT = 1;
+export const RIGHT = -1;
+
+// The child of a fork that sits on the given screen side.
+export function childOnSide(kids, side) {
+  return kids[0].side === side ? kids[0] : kids[1];
+}
+
+// Which screen side a branch is on.
+export function sideOfBranch(branch) { return branch.side; }
 
 // Replays a known route through a fresh sim of the same seed and reports what
 // it would actually have scored - decay, hazards and all. Comparing the
@@ -31,7 +44,7 @@ export function simulateRoute(seed, path, maxSeconds = 900) {
   const g = new Game(seed, {});
   let idx = 0;
   if (path.length && g.branch.id !== path[0]) {
-    g.selection = g.selection === LEFT ? RIGHT : LEFT;
+    g.selection = -g.selection;
     g._enterBranch(g._childForSelection());
   }
   if (path.length && g.branch.id === path[0]) idx = 1;
@@ -42,7 +55,7 @@ export function simulateRoute(seed, path, maxSeconds = 900) {
     if (idx < path.length) {
       const node = g.track.nodeAfter(g.branch);
       const kids = g.track.childrenOf(node);
-      const desired = kids[0].id === path[idx] ? LEFT : RIGHT;
+      const desired = (kids[0].id === path[idx] ? kids[0] : kids[1]).side;
       if (g.selection !== desired) g.selection = desired;
     }
     const before = g.branch.id;
@@ -91,10 +104,8 @@ export class Game {
     return (DECAY.flat + DECAY.flatPerStage * st) + this.length * (DECAY.rate + DECAY.ratePerStage * st);
   }
 
-  // Children are [left, right]; selection maps directly onto that.
   _childForSelection(node = this.node) {
-    const kids = this.track.childrenOf(node);
-    return this.selection === LEFT ? kids[0] : kids[1];
+    return childOnSide(this.track.childrenOf(node), this.selection);
   }
 
   // The route the vine will take if the player never taps again - drives the
@@ -130,7 +141,14 @@ export class Game {
   // unresolved fork, so there is no timing window to miss.
   tap() {
     if (this.over) return;
-    this.selection = this.selection === LEFT ? RIGHT : LEFT;
+    this.select(-this.selection);
+  }
+
+  // Absolute form, for keyboards that have a left and a right key. Pressing the
+  // side you are already taking is a no-op rather than a flip away from it.
+  select(side) {
+    if (this.over || side === this.selection) return;
+    this.selection = side;
     this.events.onFlip && this.events.onFlip(this.selection);
   }
 
