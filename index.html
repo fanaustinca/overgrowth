@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#050d09">
+<title>Overgrowth</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%8C%BF%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --ink:#eaf6ea; --dim:#9db2a4; --gold:#ffd98a; --green:#7dffb0; --red:#ff6b7d;
+    --panel:rgba(8,20,14,.82); --stroke:rgba(140,255,190,.18);
+    --font:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#050d09;color:var(--ink);font-family:var(--font);
+    user-select:none;-webkit-user-select:none;touch-action:manipulation}
+  #canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+  #ui{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;
+    padding:max(14px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}
+  .screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:18px;padding:24px;pointer-events:auto;background:radial-gradient(120% 90% at 50% 45%,rgba(4,12,8,.45),rgba(3,8,6,.94));
+    opacity:1;transition:opacity .28s ease}
+  .screen[hidden]{display:none}
+  .screen.fade{opacity:0;pointer-events:none}
+
+  .wordmark{font-size:clamp(38px,10vw,86px);font-weight:800;letter-spacing:.16em;margin:0;line-height:1;
+    background:linear-gradient(180deg,#eafff0,#63d98f 60%,#2a8f5a);-webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 0 26px rgba(80,255,150,.28))}
+  .tagline{margin:0;color:var(--dim);font-size:clamp(12px,3.2vw,15px);letter-spacing:.28em;text-transform:uppercase}
+
+  .btn{pointer-events:auto;border:1px solid var(--stroke);background:linear-gradient(180deg,rgba(30,70,50,.55),rgba(8,24,16,.75));
+    color:var(--ink);font:inherit;font-weight:650;font-size:clamp(14px,3.6vw,17px);letter-spacing:.06em;
+    padding:14px 26px;border-radius:14px;cursor:pointer;min-width:190px;min-height:52px;
+    transition:transform .12s ease,box-shadow .2s ease,background .2s ease;backdrop-filter:blur(6px)}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 8px 30px rgba(60,220,140,.16)}
+  .btn:active{transform:translateY(1px) scale(.99)}
+  .btn.primary{background:linear-gradient(180deg,rgba(90,220,140,.9),rgba(24,120,72,.92));color:#04150c;border-color:transparent;
+    box-shadow:0 10px 34px rgba(60,220,140,.28)}
+  .btn.reward{background:linear-gradient(180deg,rgba(255,214,120,.94),rgba(190,130,30,.94));color:#1e1204;border-color:transparent;
+    box-shadow:0 10px 34px rgba(255,200,90,.26)}
+  .btn.ghost{min-width:0;padding:11px 18px;font-size:13px;opacity:.9}
+  .btn[disabled]{opacity:.42;pointer-events:none}
+  .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+
+  /* HUD */
+  #hud{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .3s ease}
+  #hud.on{opacity:1}
+  .hud-top{position:absolute;top:max(16px,env(safe-area-inset-top));left:0;right:0;display:flex;justify-content:center;flex-direction:column;align-items:center;gap:2px}
+  #length{font-size:clamp(46px,13vw,84px);font-weight:800;line-height:.95;letter-spacing:-.02em;
+    text-shadow:0 0 34px rgba(120,255,170,.42),0 2px 12px rgba(0,0,0,.6);font-variant-numeric:tabular-nums}
+  #lengthLabel{font-size:11px;letter-spacing:.34em;color:var(--dim);text-transform:uppercase}
+  .hud-corner{position:absolute;top:max(16px,env(safe-area-inset-top));display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--dim)}
+  .hud-corner.left{left:max(16px,env(safe-area-inset-left))}
+  .hud-corner.right{right:max(16px,env(safe-area-inset-right));text-align:right}
+  .hud-corner b{color:var(--ink);font-size:15px;font-variant-numeric:tabular-nums}
+  #mult{position:absolute;top:calc(max(16px,env(safe-area-inset-top)) + clamp(58px,15vw,96px));left:50%;transform:translateX(-50%);
+    padding:5px 14px;border-radius:999px;background:rgba(255,210,110,.16);border:1px solid rgba(255,210,110,.4);
+    color:var(--gold);font-weight:700;font-size:14px;letter-spacing:.08em;opacity:0;transition:opacity .2s ease}
+  #mult.on{opacity:1}
+  #ghostDelta{position:absolute;bottom:calc(max(16px,env(safe-area-inset-bottom)) + 8px);left:50%;transform:translateX(-50%);
+    font-size:13px;color:#9fd8ff;letter-spacing:.08em;opacity:0;transition:opacity .25s ease}
+  #ghostDelta.on{opacity:.95}
+  #tapHint{position:absolute;bottom:calc(max(16px,env(safe-area-inset-bottom)) + 44px);left:50%;transform:translateX(-50%);
+    font-size:13px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase;animation:pulse 1.9s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.35}50%{opacity:.95}}
+
+  /* Panels */
+  .panel{background:var(--panel);border:1px solid var(--stroke);border-radius:20px;padding:clamp(18px,4vw,28px);
+    width:min(480px,94vw);backdrop-filter:blur(14px);box-shadow:0 24px 70px rgba(0,0,0,.5)}
+  .score{text-align:center}
+  .score .big{font-size:clamp(58px,17vw,104px);font-weight:800;line-height:.9;font-variant-numeric:tabular-nums;
+    background:linear-gradient(180deg,#f2fff6,#7dffb0 55%,#2f9c67);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .score .cap{font-size:11px;letter-spacing:.34em;color:var(--dim);text-transform:uppercase;margin-bottom:6px}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0 6px}
+  .stat{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:10px 6px;text-align:center}
+  .stat b{display:block;font-size:19px;font-variant-numeric:tabular-nums}
+  .stat span{font-size:10px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
+  .badge{display:inline-block;margin:0 0 10px;padding:5px 14px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.14em;
+    text-transform:uppercase;background:rgba(255,214,120,.18);color:var(--gold);border:1px solid rgba(255,214,120,.42)}
+  .seedline{text-align:center;font-size:12px;color:var(--dim);letter-spacing:.1em;margin-top:14px}
+  .seedline b{color:var(--ink)}
+  .routeline{margin-top:12px;font-size:12px;color:var(--dim);text-align:center;line-height:1.6}
+  .routeline i{color:#9fd8ff;font-style:normal}
+
+  /* Wardrobe */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-top:14px}
+  .card{position:relative;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;cursor:pointer;
+    background:rgba(255,255,255,.03);transition:border-color .2s,transform .12s;text-align:left}
+  .card:hover{transform:translateY(-2px)}
+  .card.sel{border-color:var(--green);box-shadow:0 0 0 1px rgba(125,255,176,.35) inset}
+  .card.locked{opacity:.62;cursor:not-allowed}
+  .card .swatch{height:34px;border-radius:9px;margin-bottom:9px}
+  .card .nm{font-size:13px;font-weight:650;line-height:1.15;min-height:2.3em}
+  .card .rq{font-size:10.5px;color:var(--dim);letter-spacing:.06em;margin-top:3px}
+  .lifetime{font-size:12px;color:var(--dim);text-align:center;margin-top:4px}
+  .bar{height:5px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:10px}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,#3ad48a,#c9ff9a);border-radius:99px;transition:width .5s ease}
+  h3{margin:16px 0 0;font-size:12px;letter-spacing:.26em;text-transform:uppercase;color:var(--dim)}
+
+  /* Loading */
+  #loading{background:#050d09;z-index:5}
+  #loadBar{width:min(300px,70vw);height:4px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden}
+  #loadBar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#3ad48a,#d8ff9a);transition:width .25s ease}
+  #loadPct{font-size:12px;letter-spacing:.3em;color:var(--dim)}
+
+  #toast{position:absolute;left:50%;bottom:12%;transform:translate(-50%,20px);pointer-events:none;
+    background:rgba(10,26,18,.92);border:1px solid rgba(255,214,120,.5);border-radius:14px;padding:12px 20px;
+    opacity:0;transition:opacity .3s ease,transform .3s ease;text-align:center;max-width:80vw}
+  #toast.on{opacity:1;transform:translate(-50%,0)}
+  #toast b{display:block;color:var(--gold);font-size:14px;letter-spacing:.1em}
+  #toast span{font-size:12px;color:var(--dim)}
+
+  .topbtns{position:absolute;top:max(14px,env(safe-area-inset-top));right:max(14px,env(safe-area-inset-right));display:flex;gap:8px;pointer-events:auto}
+  .icon{width:42px;height:42px;min-width:0;padding:0;display:grid;place-items:center;font-size:17px;border-radius:12px}
+  .mode{display:flex;gap:6px;padding:5px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.07)}
+  .mode button{flex:1;border:0;background:transparent;color:var(--dim);font:inherit;font-size:13px;font-weight:650;
+    padding:9px 16px;border-radius:10px;cursor:pointer;letter-spacing:.06em}
+  .mode button.on{background:rgba(125,255,176,.16);color:var(--ink)}
+  .note{font-size:11.5px;color:var(--dim);text-align:center;line-height:1.6;max-width:340px}
+  @media (max-height:520px){ .wordmark{font-size:clamp(30px,8vw,52px)} .stats{margin:12px 0 4px} .panel{padding:16px} }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="ui">
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hud-top">
+      <div id="length">0</div>
+      <div id="lengthLabel">length</div>
+    </div>
+    <div id="mult">×2.0</div>
+    <div class="hud-corner left"><span>BEST</span><b id="hudBest">0</b></div>
+    <div class="hud-corner right"><span id="hudModeLabel">ENDLESS</span><b id="hudStage">STAGE 1</b></div>
+    <div id="ghostDelta"></div>
+    <div id="tapHint">tap to flip branch</div>
+  </div>
+
+  <!-- Menu -->
+  <div class="screen" id="menu" hidden>
+    <h1 class="wordmark">OVERGROWTH</h1>
+    <p class="tagline">one tap · branch · grow</p>
+    <div class="panel">
+      <div class="mode">
+        <button id="modeDaily" class="on">Daily Seed</button>
+        <button id="modeEndless">Endless</button>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="menuBest">0</b><span>Best</span></div>
+        <div class="stat"><b id="menuToday">0</b><span>Today</span></div>
+        <div class="stat"><b id="menuLifetime">0</b><span>Lifetime</span></div>
+      </div>
+      <div class="seedline">Track <b id="menuSeed">—</b></div>
+      <div class="row" style="margin-top:18px">
+        <button class="btn primary" id="playBtn">GROW</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn ghost" id="wardrobeBtn">Skins &amp; Biomes</button>
+        <button class="btn ghost" id="muteBtn">Sound: On</button>
+      </div>
+      <p class="note" style="margin:16px auto 0">Tap anywhere to flip which branch the vine takes.
+        Wide lanes are safe. Narrow glowing lanes pay more — if they're clean.</p>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="screen" id="results" hidden>
+    <div class="panel score">
+      <div id="resultBadge" class="badge" hidden>New personal best</div>
+      <div class="cap">Peak length</div>
+      <div class="big" id="resultScore">0</div>
+      <div class="stats">
+        <div class="stat"><b id="resultForks">0</b><span>Forks</span></div>
+        <div class="stat"><b id="resultOrbs">0</b><span>Picked</span></div>
+        <div class="stat"><b id="resultHits">0</b><span>Hits</span></div>
+      </div>
+      <div class="routeline" id="resultRoute"></div>
+      <div class="seedline">Best <b id="resultBest">0</b> · Track <b id="resultSeed">—</b></div>
+      <div class="row" style="margin-top:18px">
+        <button class="btn reward" id="reviveBtn" hidden>▶ Watch ad · regrow 50%</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn primary" id="retryBtn">GROW AGAIN</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn ghost" id="shareBtn">Share score</button>
+        <button class="btn ghost" id="menuBtn">Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Wardrobe -->
+  <div class="screen" id="wardrobe" hidden>
+    <div class="panel">
+      <div class="cap" style="text-align:center;font-size:11px;letter-spacing:.34em;color:var(--dim);text-transform:uppercase">Collection</div>
+      <div class="lifetime">Lifetime growth <b id="wLifetime">0</b></div>
+      <div class="bar"><i id="wBar" style="width:0%"></i></div>
+      <div class="lifetime" id="wNext" style="margin-top:8px"></div>
+      <h3>Vine skins</h3>
+      <div class="grid" id="skinGrid"></div>
+      <h3>Biomes</h3>
+      <div class="grid" id="biomeGrid"></div>
+      <div class="row" style="margin-top:20px">
+        <button class="btn primary" id="wardrobeClose">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div class="screen" id="loading">
+    <h1 class="wordmark">OVERGROWTH</h1>
+    <div id="loadBar"><i></i></div>
+    <div id="loadPct">0%</div>
+  </div>
+
+  <div id="toast"><b></b><span></span></div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+<noscript><p style="color:#eaf6ea;font-family:sans-serif;padding:24px">Overgrowth needs JavaScript and WebGL2.</p></noscript>
+</body>
+</html>
