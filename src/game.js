@@ -122,10 +122,27 @@ export class Game {
     return ids;
   }
 
+  // What gets drawn ahead of the vine: the open fork, then the fork after that
+  // *along the route the current selection commits to*, and so on.
+  //
+  // Drawing the whole subtree instead (2 + 4 + 8 branches) put four lanes in
+  // the same slice of track at depth 2 and eight at depth 3. Same-depth lanes
+  // share a z span, so they were the ones that crossed and overlapped on
+  // screen - and once two lanes overlap there is no telling which of them a
+  // hazard is sitting on. Down this spine there are only ever two lanes per
+  // depth, and _lateralPair guarantees those two are ordered and apart.
+  //
+  // Nothing is lost: the branches this drops are the continuations of a fork
+  // the player has already been shown they are not taking.
   lookahead(depth) {
-    const from = this.branch ? this.track.nodeAfter(this.branch) : this.node;
-    const list = this.track.lookahead(from, depth);
-    if (this.branch) list.unshift({ branch: this.branch, ahead: -1 });
+    const list = [];
+    if (this.branch) list.push({ branch: this.branch, ahead: -1 });
+    let node = this.branch ? this.track.nodeAfter(this.branch) : this.node;
+    for (let d = 0; d < depth; d++) {
+      const kids = this.track.childrenOf(node);
+      list.push({ branch: kids[0], ahead: d }, { branch: kids[1], ahead: d });
+      node = this.track.nodeAfter(childOnSide(kids, this.selection));
+    }
     return list;
   }
 

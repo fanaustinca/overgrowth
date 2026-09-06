@@ -101,12 +101,14 @@ ${CURVE_CHUNK}
 varying vec3 vNormalV;
 varying vec3 vViewDir;
 varying vec3 vWorld;
+varying float vNear;
 #include <fog_pars_vertex>
 void main(){
   vec4 worldPos = modelMatrix * vec4(position, 1.0);
   vWorld = worldPos.xyz;
   vNormalV = normalize(normalMatrix * normal);
   vec4 mvPosition = curveView(viewMatrix * worldPos);
+  vNear = smoothstep(7.0, 22.0, -mvPosition.z);
   vViewDir = normalize(-mvPosition.xyz);
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
@@ -117,14 +119,15 @@ precision mediump float;
 varying vec3 vNormalV;
 varying vec3 vViewDir;
 varying vec3 vWorld;
+varying float vNear;
 uniform vec3 uColor;
-uniform float uTime;
+uniform float uTime, uDim;
 void main(){
   // Billboarded-ish soft glow: fades at grazing angles so it reads as light,
   // not as a card.
   float f = pow(max(dot(normalize(vNormalV), normalize(vViewDir)), 0.0), 1.5);
   float pulse = 0.7 + 0.3 * sin(uTime * 3.5 + vWorld.z);
-  gl_FragColor = vec4(uColor * f * pulse * 0.4, f * 0.32 * pulse);
+  gl_FragColor = vec4(uColor * f * pulse * 0.4 * uDim, f * 0.32 * pulse * uDim);
 }`;
 
 const ORB_FRAG = `
@@ -132,8 +135,9 @@ precision mediump float;
 varying vec3 vNormalV;
 varying vec3 vViewDir;
 varying vec3 vWorld;
+varying float vNear;
 uniform vec3 uColor, uCore;
-uniform float uTime;
+uniform float uTime, uDim;
 #include <fog_pars_fragment>
 void main(){
   float fres = pow(1.0 - max(dot(normalize(vNormalV), normalize(vViewDir)), 0.0), 2.2);
@@ -141,7 +145,10 @@ void main(){
   // Core stays a tint of the pickup's own colour: a white core reads as a
   // generic bauble and loses the safe/risk colour language.
   vec3 col = mix(uCore, uColor, 0.35 + 0.65 * fres) * pulse * (1.0 + fres * 1.6);
-  gl_FragColor = vec4(col, 1.0);
+  // uDim is the owning lane's brightness. Props are lit like the ribbon they
+  // sit on, so a pickup on a rejected lane cannot pass for one on the lane the
+  // vine is actually taking.
+  gl_FragColor = vec4(mix(vec3(0.02, 0.04, 0.03), col, uDim), 1.0);
   #include <fog_fragment>
 }`;
 
@@ -150,15 +157,16 @@ precision mediump float;
 varying vec3 vNormalV;
 varying vec3 vViewDir;
 varying vec3 vWorld;
+varying float vNear;
 uniform vec3 uColor;
-uniform float uTime;
+uniform float uTime, uDim;
 #include <fog_pars_fragment>
 void main(){
   vec3 N = normalize(vNormalV);
   float fres = pow(1.0 - max(dot(N, normalize(vViewDir)), 0.0), 1.6);
   float pulse = 0.55 + 0.45 * sin(uTime * 5.5 + vWorld.z * 0.7 + vWorld.x);
   float lit = max(N.y, 0.0) * 0.25;
-  vec3 col = vec3(0.05, 0.02, 0.03) + uColor * (fres * 1.6 * pulse + lit);
+  vec3 col = vec3(0.05, 0.02, 0.03) + uColor * (fres * 1.6 * pulse + lit) * uDim;
   gl_FragColor = vec4(col, 1.0);
   #include <fog_fragment>
 }`;
@@ -168,13 +176,32 @@ precision mediump float;
 varying vec3 vNormalV;
 varying vec3 vViewDir;
 varying vec3 vWorld;
+varying float vNear;
 uniform vec3 uColor;
-uniform float uTime;
+uniform float uTime, uDim;
 #include <fog_pars_fragment>
 void main(){
   float pulse = 0.6 + 0.4 * sin(uTime * 3.0 - vWorld.z * 0.18);
-  gl_FragColor = vec4(uColor * pulse * 0.9, 1.0);
+  gl_FragColor = vec4(uColor * pulse * 0.9 * uDim, 1.0);
   #include <fog_fragment>
+}`;
+
+// Hazard footprints and pickup stems. These are the parts that actually answer
+// "which lane is that spike on": a prop floating in space between two lanes is
+// ambiguous, a prop with a patch painted on one lane's surface is not.
+const ANCHOR_FRAG = `
+precision mediump float;
+varying vec3 vNormalV;
+varying vec3 vViewDir;
+varying vec3 vWorld;
+varying float vNear;
+uniform vec3 uColor;
+uniform float uTime, uDim, uPulse;
+void main(){
+  float pulse = mix(1.0, 0.6 + 0.4 * sin(uTime * 5.5 + vWorld.z * 0.7), uPulse);
+  // vNear keeps the patch off the lens: metres from the camera it is a wall of
+  // additive red, and the vine has to stay the brightest thing on screen.
+  gl_FragColor = vec4(uColor * pulse * 1.3 * uDim * vNear, 0.72 * pulse * uDim * vNear);
 }`;
 
 const DEBRIS_VERT = `
@@ -291,9 +318,22 @@ export class TrackView {
       vertexShader: GLOW_VERT, fragmentShader: HAZARD_FRAG, fog: true,
       uniforms: THREE.UniformsUtils.merge([
         THREE.UniformsLib.fog,
-        { uColor: { value: new THREE.Color(0xff3b5c) }, uTime: { value: 0 } },
+        { uColor: { value: new THREE.Color(0xff3b5c) }, uTime: { value: 0 }, uDim: { value: 1 } },
       ]),
     });
+
+    // Templates, cloned per branch in _createBranch so every prop can be lit by
+    // its own lane's brightness.
+    this.patchTemplate = new THREE.ShaderMaterial({
+      vertexShader: GLOW_VERT, fragmentShader: ANCHOR_FRAG,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      uniforms: {
+        uColor: { value: new THREE.Color(0xff3b5c) }, uTime: { value: 0 },
+        uDim: { value: 1 }, uPulse: { value: 1 },
+      },
+    });
+    this.stemTemplate = this.patchTemplate.clone();
+    this.stemTemplate.uniforms.uPulse.value = 0;
 
     this.haloGeo = new THREE.SphereGeometry(1.5, 12, 10);
     this.orbHalo = this._glowMat(HALO_FRAG, 0x8dff9a, 0xffffff);
@@ -306,6 +346,10 @@ export class TrackView {
     this.orbGeo = new THREE.IcosahedronGeometry(0.85, 1);
     this.gemGeo = new THREE.OctahedronGeometry(1.05, 0);
     this.spikeGeo = new THREE.ConeGeometry(0.45, 2.0, 5);
+    this.patchGeo = new THREE.RingGeometry(0.5, 1.0, 24);
+    this.patchGeo.rotateX(-Math.PI / 2);
+    this.stemGeo = new THREE.CylinderGeometry(0.11, 0.11, 1, 6, 1, true);
+    this.stemGeo.translate(0, -0.5, 0); // hangs down from the pickup
 
 
     this.ghostMarker = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 10), this._glowMat(ORB_FRAG, 0x9fd8ff, 0xffffff));
@@ -323,7 +367,10 @@ export class TrackView {
       vertexShader: GLOW_VERT, fragmentShader: frag, fog: true,
       uniforms: THREE.UniformsUtils.merge([
         THREE.UniformsLib.fog,
-        { uColor: { value: new THREE.Color(color) }, uCore: { value: new THREE.Color(core) }, uTime: { value: 0 } },
+        {
+          uColor: { value: new THREE.Color(color) }, uCore: { value: new THREE.Color(core) },
+          uTime: { value: 0 }, uDim: { value: 1 },
+        },
       ]),
     });
   }
@@ -355,10 +402,13 @@ export class TrackView {
     this.biome = biome;
     this.safeColor = new THREE.Color(biome.rim);
     this.riskColor = new THREE.Color(biome.risk || biome.key);
+    this.orbHalo.uniforms.uColor.value.setHex(biome.rim);
     this.orbMat.uniforms.uColor.value.setHex(biome.rim);
     this.gemMat.uniforms.uColor.value.setHex(0xffd166);
     this.nodeMat.uniforms.uColor.value.setHex(biome.rim);
-    this.hazardMat.uniforms.uColor.value.setHex(biome.id === 'abyss' ? 0xff4bd8 : 0xff3b5c);
+    const hazHex = biome.id === 'abyss' ? 0xff4bd8 : 0xff3b5c;
+    this.hazardMat.uniforms.uColor.value.setHex(hazHex);
+    this.patchTemplate.uniforms.uColor.value.setHex(hazHex);
     this.ghostMat.uniforms.uColor.value.setHex(0x9fd8ff);
   }
 
@@ -392,6 +442,13 @@ export class TrackView {
       entry.ribbonTargetSel = branch.id === selectedId ? 1
         : current ? 0.3
         : (projected && projected.has(branch.id) ? 0.4 : 0);
+      // Props follow their own lane's standing. The rejected sibling keeps
+      // enough light to be read - which lane is trapped is the whole decision -
+      // but never as much as the lane the vine is committed to.
+      entry.propTargetDim = branch.id === selectedId ? 1
+        : current ? 0.8
+        : rejected ? 0.5
+        : (projected && projected.has(branch.id) ? 0.85 : 0.62);
       if (entry.shadow) entry.shadow.material.uniforms.uAlpha.value = 0.85 / (1 + Math.max(0, ahead));
     }
     for (const [id, entry] of this.entries) {
@@ -423,6 +480,13 @@ export class TrackView {
   _createBranch(branch) {
     const group = new THREE.Group();
     const risk = branch.tier === 'risk';
+    // Every prop on this branch gets its own material clone. Sharing one
+    // material across all lanes meant a spike on a lane the player had already
+    // rejected drew at full brightness over the lane in front of it and read as
+    // if it were sitting on that one. They all key off `uDim` now, so a prop is
+    // always as bright as the ribbon it belongs to.
+    const mats = [];
+    const own = (template) => { const m = template.clone(); mats.push(m); return m; };
 
     const mat = this.ribbonTemplate.clone();
     mat.uniforms.uColor.value.copy(risk ? this.riskColor : this.safeColor);
@@ -444,7 +508,7 @@ export class TrackView {
 
     // Fork marker at the branch's end point, where the next choice happens.
     const end = branch.points[branch.points.length - 1];
-    const ring = new THREE.Mesh(this.nodeGeo, this.nodeMat);
+    const ring = new THREE.Mesh(this.nodeGeo, own(this.nodeMat));
     ring.position.set(end.x, end.y - 2.0, end.z);
     ring.rotation.x = Math.PI / 2;
     group.add(ring);
@@ -452,16 +516,27 @@ export class TrackView {
     const pickupMeshes = [];
     for (const p of branch.pickups) {
       const isGem = p.type === 'gem';
-      const mesh = new THREE.Mesh(isGem ? this.gemGeo : this.orbGeo, isGem ? this.gemMat : this.orbMat);
+      const mesh = new THREE.Mesh(isGem ? this.gemGeo : this.orbGeo, own(isGem ? this.gemMat : this.orbMat));
       mesh.position.copy(pointAt(branch, p.t));
       mesh.position.y += 0.2;
-      const halo = new THREE.Mesh(this.haloGeo, isGem ? this.gemHalo : this.orbHalo);
+      const halo = new THREE.Mesh(this.haloGeo, own(isGem ? this.gemHalo : this.orbHalo));
       halo.renderOrder = 4;
       mesh.add(halo);
       mesh.userData.pickup = p;
       mesh.userData.baseY = mesh.position.y;
       group.add(mesh);
       pickupMeshes.push(mesh);
+
+      // Stem down to this lane's ribbon. It is a sibling of the orb rather than
+      // a child so the orb's tumble does not swing it around.
+      const stemMat = own(this.stemTemplate);
+      stemMat.uniforms.uColor.value.copy(risk ? this.riskColor : this.safeColor);
+      const stem = new THREE.Mesh(this.stemGeo, stemMat);
+      stem.position.set(mesh.position.x, mesh.position.y, mesh.position.z);
+      stem.scale.y = 2.3; // orb sits at +0.2, the ribbon at -2.1
+      stem.userData.pickup = p;
+      group.add(stem);
+      pickupMeshes.push(stem);
     }
 
     const hazardMeshes = [];
@@ -469,21 +544,35 @@ export class TrackView {
       const cluster = new THREE.Group();
       cluster.position.copy(pointAt(branch, hz.t));
       cluster.position.y -= 1.9;
+      const hazMat = own(this.hazardMat);
       const spikes = 4;
       for (let i = 0; i < spikes; i++) {
-        const s = new THREE.Mesh(this.spikeGeo, this.hazardMat);
+        const s = new THREE.Mesh(this.spikeGeo, hazMat);
         const a = hz.phase + (i / spikes) * Math.PI * 2;
         s.position.set(Math.cos(a) * 0.75, 0.85, Math.sin(a) * 0.75);
         s.rotation.set(Math.cos(a) * 0.42, 0, -Math.sin(a) * 0.42);
         cluster.add(s);
       }
+      // Danger patch painted flat on the ribbon under the cluster: it plants the
+      // spikes on one specific lane even when a second lane passes behind them.
+      // It sits in the branch group rather than in the cluster so the cluster's
+      // spin does not swing an ellipse around, and it is scaled to the ribbon's
+      // own width so it reads as marking on that lane, not a disc floating over
+      // whatever happens to be underneath.
+      const patch = new THREE.Mesh(this.patchGeo, own(this.patchTemplate));
+      patch.position.copy(cluster.position);
+      patch.position.y -= 0.2; // the ribbon plane, 2.1 below the path centreline
+      patch.scale.set(branch.width * 1.45, 1, 2.4);
+      patch.renderOrder = 2;
+      group.add(patch);
+      cluster.userData.patch = patch;
       cluster.userData.hazard = hz;
       group.add(cluster);
       hazardMeshes.push(cluster);
     }
 
     this.scene.add(group);
-    const entry = { branch, group, ribbon, shadow, pickupMeshes, hazardMeshes, sel: 0, ahead: 0 };
+    const entry = { branch, group, ribbon, shadow, pickupMeshes, hazardMeshes, mats, sel: 0, dim: 1, ahead: 0 };
     this.entries.set(branch.id, entry);
     return entry;
   }
@@ -493,6 +582,7 @@ export class TrackView {
     entry.ribbon.geometry.dispose();
     entry.ribbon.material.dispose();
     if (entry.shadow) { entry.shadow.geometry.dispose(); entry.shadow.material.dispose(); }
+    for (const m of entry.mats || []) m.dispose();
   }
 
   burst(position, colorHex, count = 26, spread = 7) {
@@ -513,13 +603,9 @@ export class TrackView {
   update(dt, elapsed, ghostPos) {
     this.ribbonTemplate.uniforms.uTime.value = elapsed;
     this.ghostMat.uniforms.uTime.value = elapsed;
-    this.orbMat.uniforms.uTime.value = elapsed;
-    this.gemMat.uniforms.uTime.value = elapsed;
-    this.orbHalo.uniforms.uTime.value = elapsed;
-    this.gemHalo.uniforms.uTime.value = elapsed;
-    this.orbHalo.uniforms.uColor.value.copy(this.orbMat.uniforms.uColor.value);
-    this.hazardMat.uniforms.uTime.value = elapsed;
-    this.nodeMat.uniforms.uTime.value = elapsed;
+    // orb/gem/halo/hazard/node materials are per-branch clones now and are
+    // driven in the entry loop below; only the ghost marker still shares one.
+    this.ghostMarker.material.uniforms.uTime.value = elapsed;
 
     for (const entry of this.entries.values()) {
       const u = entry.ribbon.material.uniforms;
@@ -527,15 +613,24 @@ export class TrackView {
       entry.sel += ((entry.ribbonTargetSel || 0) - entry.sel) * Math.min(1, dt * 9);
       u.uSelected.value = entry.sel;
 
+      const target = entry.propTargetDim === undefined ? 1 : entry.propTargetDim;
+      entry.dim += (target - entry.dim) * Math.min(1, dt * 9);
+      for (const m of entry.mats) {
+        m.uniforms.uTime.value = elapsed;
+        m.uniforms.uDim.value = entry.dim;
+      }
+
       for (const m of entry.pickupMeshes) {
         const p = m.userData.pickup;
         if (p.taken) { m.visible = false; continue; }
+        if (m.userData.baseY === undefined) continue; // stem: nothing to animate
         m.rotation.y += dt * 1.6;
         m.rotation.x += dt * 0.7;
         m.position.y = m.userData.baseY + Math.sin(elapsed * 2.4 + m.position.z) * 0.18;
       }
       for (const c of entry.hazardMeshes) {
         c.visible = !c.userData.hazard.hit;
+        if (c.userData.patch) c.userData.patch.visible = c.visible;
         c.rotation.y += dt * 0.5;
       }
     }

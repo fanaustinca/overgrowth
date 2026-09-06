@@ -133,6 +133,25 @@ picker mirrors the choice. Left and right always mean the player's left and
 right: the chase camera looks down +z, which mirrors world x, so `LEFT`/`RIGHT`
 in `game.js` are screen sides and every branch resolves through `childOnSide`.
 
+**Keeping lanes apart.** Two rules stop the track from tangling. `_lateralPair`
+in `track.js` places both lanes leaving a fork together rather than one at a
+time - ordered, never closer than `MIN_GAP`, and shifted rather than folded when
+the pair would overrun `LANE_MAX` - so the left lane can never end up right of
+the right one. And `Game.lookahead` walks a *spine*, not the subtree: the open
+fork, then the fork after it along the route the current selection commits to.
+Drawing the full subtree put four lanes in the same slice of track two forks out
+and eight three forks out, and since same-depth lanes share a z span those were
+the ones that crossed. The branches the spine drops are continuations of a fork
+the player has already been shown they are not taking.
+
+**Props belong to a lane.** Orbs, gems and spike clusters take a per-branch
+material clone driven by `uDim`, so a prop is lit exactly as brightly as the
+ribbon it sits on. Hazards additionally paint a danger patch flat on their own
+ribbon and pickups drop a stem down to theirs, which answers "which lane is that
+spike on" even where two lanes pass close in screen space. The first branch of a
+run carries no hazards: the player is moving down it before they have seen
+anything, so it must not be able to kill them.
+
 **Progression** is cosmetic only: 5 vine skins and 4 biomes unlocked by
 cumulative lifetime length. Nothing affects difficulty or scoring.
 

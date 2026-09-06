@@ -17,7 +17,9 @@ import { streamFor } from './rng.js';
 export const LANE_MAX = 9.0;
 export const FORKS_PER_STAGE = 16; // ~50 length at an average +3.1/fork
 
-const SAMPLES = 16; // spine samples per branch
+const SAMPLES = 16;      // spine samples per branch
+const MIN_GAP = 5.2;     // narrowest the two lanes leaving a fork may end up
+const TIER_STEP = 1.15;  // height a branch takes on relative to its parent
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -68,17 +70,48 @@ export class Track {
     const riskOnRight = rnd() < 0.5;
     const doubleRisk = stage >= 2 && rnd() < 0.12;
 
+    // Both lanes are placed together rather than independently. Placing them
+    // one at a time and folding whichever one left the play area used to let
+    // the right lane end up left of the left one - the two ribbons crossed in
+    // an X right where the player is trying to read them. Resolving the pair
+    // means the ordering can be guaranteed instead of hoped for.
+    const lats = this._lateralPair(node, rnd);
+
     const kids = [];
     for (let i = 0; i < 2; i++) {
       const side = i === 0 ? -1 : 1;
       const isRisk = doubleRisk || (side > 0) === riskOnRight;
-      kids.push(this._buildBranch(node, side, isRisk));
+      kids.push(this._buildBranch(node, side, isRisk, lats[i]));
     }
     node.children = kids;
     return kids;
   }
 
-  _buildBranch(node, side, isRisk) {
+  // Where the two lanes leaving a node end up. Ordered (left stays left),
+  // never closer than MIN_GAP, and shifted - not folded - back inside the play
+  // area when the pair would overrun an edge.
+  _lateralPair(node, rnd) {
+    // A gentle pull back toward the middle. Without it the pair shift below
+    // parks a lane on the wall and it stays there: the track stops wandering
+    // and the vine hugs the edge of the play area for forks at a time.
+    const centre = node.lat * 0.78;
+    let lo = centre - lerp(4.4, 6.6, rnd());
+    let hi = centre + lerp(4.4, 6.6, rnd());
+
+    const gap = hi - lo;
+    if (gap < MIN_GAP) {
+      const mid = (lo + hi) / 2;
+      lo = mid - MIN_GAP / 2;
+      hi = mid + MIN_GAP / 2;
+    }
+    if (hi > LANE_MAX) { const d = hi - LANE_MAX; lo -= d; hi -= d; }
+    if (lo < -LANE_MAX) { const d = -LANE_MAX - lo; lo += d; hi += d; }
+    // Both edges at once only happens if the pair is wider than the box; then
+    // the box wins and the gap is whatever fits.
+    return [clamp(lo, -LANE_MAX, LANE_MAX), clamp(hi, -LANE_MAX, LANE_MAX)];
+  }
+
+  _buildBranch(node, side, isRisk, lat) {
     const id = node.id + (side < 0 ? 'L' : 'R');
     const cached = this.branches.get(id);
     if (cached) return cached;
@@ -88,15 +121,14 @@ export class Track {
     const stage = stageForDepth(node.depth);
     const span = spacingForDepth(node.depth);
 
-    // Lateral target. Branches that would run off the play area get folded back
-    // toward the centre so the track never drifts out of frame.
-    const spread = lerp(4.2, 6.4, rnd());
-    let lat = node.lat + side * spread;
-    if (Math.abs(lat) > LANE_MAX) lat = node.lat - side * spread * lerp(0.5, 0.9, rnd());
-    lat = clamp(lat, -LANE_MAX, LANE_MAX);
-
     const y0 = node.pos.y;
-    const y1 = clamp(y0 + (rnd() - 0.5) * 2.6, -3.0, 3.0);
+    // Each lane takes a step up or down relative to its parent, pulled back
+    // toward level so it cannot drift. Two lanes that pass laterally close
+    // (cousins from different forks, which a bounded play area makes
+    // unavoidable) are then separated in height instead, so one clearly runs
+    // over the other rather than merging into it.
+    const step = side * TIER_STEP * lerp(0.8, 1.25, rnd());
+    const y1 = clamp(y0 * 0.55 + step, -3.4, 3.4);
 
     const p0 = { x: node.pos.x, y: y0, z: node.pos.z };
     const p3 = { x: lat, y: y1, z: node.pos.z + span };
@@ -156,7 +188,10 @@ export class Track {
       // is what stops blind risk-taking from dominating. Hazards are drawn on
       // the lane well before the fork resolves, so a player who reads ahead can
       // pick out the clean risk lanes - which is the entire skill of the game.
-      const pHaz = clamp(0.55 + 0.06 * stage, 0, 0.9);
+      // The first branch is entered before the player has seen anything, so a
+      // trapped one would end the run on a choice they never made. Everything
+      // from the first real fork onward is fair game.
+      const pHaz = depth === 1 ? 0 : clamp(0.55 + 0.06 * stage, 0, 0.9);
       if (rnd() < pHaz) {
         const count = 1 + (rnd() < clamp(0.2 + 0.09 * stage, 0, 0.7) ? 1 : 0)
                         + (rnd() < clamp(0.05 + 0.06 * stage, 0, 0.5) ? 1 : 0);
